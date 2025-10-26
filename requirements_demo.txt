@@ -4,10 +4,12 @@ tqdm
 hydra-core
 omegaconf
 opencv-python
+open3d
 scipy
 onnxruntime
 requests
 trimesh
+usd-core
 matplotlib
 pydantic==2.10.6
 # feel free to skip the dependencies below if you do not need demo_colmap.py
