@@ -9,7 +9,7 @@ import glob
 import time
 import threading
 import argparse
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import torch
@@ -386,7 +386,7 @@ def main():
 
     print("Starting viser visualization...")
 
-    viser_server = viser_wrapper(
+    viser_wrapper(
         predictions,
         port=args.port,
         init_conf_threshold=args.conf_threshold,

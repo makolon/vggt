@@ -32,8 +32,11 @@ services:
     
     # Increase shared memory size for PyTorch DataLoader
     shm_size: '16gb'
+
+    # Network settings
+    network_mode: host
     
-    # Optional: Expose ports for demos (uncomment if needed)
+    # Expose ports for demos
     ports:
       - "7860:7860"  # Gradio demo
       - "8080:8080"  # Viser demo
