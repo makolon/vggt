@@ -115,7 +115,7 @@ def demo_fn(args):
     model.load_state_dict(torch.hub.load_state_dict_from_url(_URL))
     model.eval()
     model = model.to(device)
-    print(f"Model loaded")
+    print("Model loaded")
 
     # Get image paths and preprocess them
     image_dir = os.path.join(args.scene_dir, "images")
