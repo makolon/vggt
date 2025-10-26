@@ -33,7 +33,7 @@ from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 
 def viser_wrapper(
     pred_dict: dict,
-    port: int = 8080,
+    port: int = 6080,
     init_conf_threshold: float = 50.0,  # represents percentage (e.g., 50 means filter lowest 50%)
     use_point_map: bool = False,
     background_mode: bool = False,
@@ -311,7 +311,7 @@ parser.add_argument(
 )
 parser.add_argument("--use_point_map", action="store_true", help="Use point map instead of depth-based points")
 parser.add_argument("--background_mode", action="store_true", help="Run the viser server in background mode")
-parser.add_argument("--port", type=int, default=8080, help="Port number for the viser server")
+parser.add_argument("--port", type=int, default=6080, help="Port number for the viser server")
 parser.add_argument(
     "--conf_threshold", type=float, default=25.0, help="Initial percentage of low-confidence points to filter out"
 )

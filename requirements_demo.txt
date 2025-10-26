@@ -11,6 +11,8 @@ requests
 trimesh
 usd-core
 matplotlib
+PyOpenGL
+pyside6
 pydantic==2.10.6
 # feel free to skip the dependencies below if you do not need demo_colmap.py
 pycolmap==3.10.0

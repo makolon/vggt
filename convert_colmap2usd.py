@@ -16,7 +16,7 @@ import trimesh
 from pathlib import Path
 
 import pycolmap
-from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf, UsdShade
+from pxr import Usd, UsdGeom, UsdPhysics, Sdf, UsdShade, Vt
 import open3d as o3d
 
 
@@ -51,12 +51,6 @@ def parse_args():
         default="meshSimplification",
         choices=["convexDecomposition", "convexHull", "meshSimplification", "none"],
         help="Collision approximation method"
-    )
-    parser.add_argument(
-        "--mass",
-        type=float,
-        default=1.0,
-        help="Mass in kg for the physics body (default: 1.0)"
     )
     parser.add_argument(
         "--static_friction",
@@ -98,20 +92,16 @@ def load_colmap_reconstruction(sparse_dir):
 def load_point_cloud_from_ply(ply_path):
     """Load point cloud from PLY file as fallback."""
     print(f"Loading point cloud from {ply_path}...")
-    try:
-        mesh = trimesh.load(ply_path)
-        if isinstance(mesh, trimesh.PointCloud):
-            points = mesh.vertices
-            colors = mesh.colors[:, :3] if mesh.colors is not None else None
-        else:
-            points = mesh.vertices
-            colors = mesh.visual.vertex_colors[:, :3] if hasattr(mesh.visual, 'vertex_colors') else None
-        
-        print(f"Loaded {len(points)} points from PLY")
-        return points, colors
-    except Exception as e:
-        print(f"Error loading PLY file: {e}")
-        return None, None
+    mesh = trimesh.load(ply_path)
+    if isinstance(mesh, trimesh.PointCloud):
+        points = mesh.vertices
+        colors = mesh.colors[:, :3] if mesh.colors is not None else None
+    else:
+        points = mesh.vertices
+        colors = mesh.visual.vertex_colors[:, :3] if hasattr(mesh.visual, 'vertex_colors') else None
+    
+    print(f"Loaded {len(points)} points from PLY")
+    return points, colors
 
 
 def reconstruction_to_point_cloud(reconstruction):
@@ -200,16 +190,18 @@ def create_usd_from_point_cloud(points, colors, output_path, args):
     points_prim = UsdGeom.PointInstancer.Define(stage, points_path)
     
     # Set point positions
-    points_prim.GetPositionsAttr().Set(Gf.Vec3fArray([Gf.Vec3f(*p) for p in points]))
+    points_np = np.asarray(points, dtype=np.float32)
+    points_prim.GetPositionsAttr().Set(Vt.Vec3fArray.FromNumpy(points_np))
     
     # Set point colors if available
     if colors is not None:
         colors_normalized = colors.astype(np.float32) / 255.0
-        primvar = points_prim.CreatePrimvar(
+        primvars_api = UsdGeom.PrimvarsAPI(points_prim.GetPrim())
+        primvar = primvars_api.CreatePrimvar(
             "displayColor",
             Sdf.ValueTypeNames.Color3fArray
         )
-        primvar.Set(Gf.Vec3fArray([Gf.Vec3f(*c) for c in colors_normalized]))
+        primvar.Set(Vt.Vec3fArray.FromNumpy(colors_normalized))
     
     # Set point IDs
     num_points = len(points)
@@ -254,23 +246,27 @@ def create_usd_from_mesh(mesh, output_path, args):
     vertices = mesh.vertices
     faces = mesh.faces
     
+    # Convert to float32 for USD compatibility
+    vertices_np = np.asarray(vertices, dtype=np.float32)
+    
     # USD expects flattened face indices
     face_vertex_counts = [3] * len(faces)
     face_vertex_indices = faces.flatten()
     
-    usd_mesh.GetPointsAttr().Set(Gf.Vec3fArray([Gf.Vec3f(*v) for v in vertices]))
-    usd_mesh.GetFaceVertexCountsAttr().Set(face_vertex_counts)
-    usd_mesh.GetFaceVertexIndicesAttr().Set(face_vertex_indices.tolist())
+    usd_mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(vertices_np))
+    usd_mesh.GetFaceVertexCountsAttr().Set(Vt.IntArray(face_vertex_counts))
+    usd_mesh.GetFaceVertexIndicesAttr().Set(Vt.IntArray(face_vertex_indices.tolist()))
     
     # Set vertex colors if available
     if mesh.visual.vertex_colors is not None:
         colors = mesh.visual.vertex_colors[:, :3].astype(np.float32) / 255.0
-        primvar = usd_mesh.CreatePrimvar(
+        primvars_api = UsdGeom.PrimvarsAPI(usd_mesh.GetPrim())
+        primvar = primvars_api.CreatePrimvar(
             "displayColor",
             Sdf.ValueTypeNames.Color3fArray,
             UsdGeom.Tokens.vertex
         )
-        primvar.Set(Gf.Vec3fArray([Gf.Vec3f(*c) for c in colors]))
+        primvar.Set(Vt.Vec3fArray.FromNumpy(colors))
     
     # Add collision properties
     if args.collision_approximation != "none":
@@ -285,11 +281,6 @@ def create_usd_from_mesh(mesh, output_path, args):
             mesh_collision_api.CreateApproximationAttr().Set("convexDecomposition")
         elif args.collision_approximation == "meshSimplification":
             mesh_collision_api.CreateApproximationAttr().Set("meshSimplification")
-    
-    # Add rigid body properties
-    UsdPhysics.RigidBodyAPI.Apply(geom_prim)
-    mass_api = UsdPhysics.MassAPI.Apply(geom_prim)
-    mass_api.CreateMassAttr().Set(args.mass)
     
     # Create physics material
     material_path = "/World/PhysicsMaterial"

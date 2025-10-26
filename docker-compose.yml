@@ -1,21 +1,53 @@
 version: '3.8'
 
+# Extension fields for reusable configurations
+x-default-vggt-deploy: &default-vggt-deploy
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+
+x-default-vggt-environment: &default-vggt-environment
+  - DISPLAY
+  - QT_X11_NO_MITSHM=1
+  - NVIDIA_VISIBLE_DEVICES=all
+  - NVIDIA_DRIVER_CAPABILITIES=all
+
 services:
+  # noVNC desktop service for visualization
+  desktop:
+    image: ghcr.io/matsuolab/virtual_desktop:latest
+    container_name: vggt-desktop
+    runtime: nvidia
+    environment: *default-vggt-environment
+    ports:
+      - "6080:6080"  # noVNC web interface
+    volumes:
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+        read_only: false
+    security_opt:
+      - seccomp:unconfined
+    deploy: *default-vggt-deploy
+    restart: unless-stopped
+
   vggt:
     build:
       context: .
       dockerfile: Dockerfile
     image: vggt:latest
     container_name: vggt-dev
+    depends_on:
+      - desktop
     
     # Enable GPU support
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *default-vggt-deploy
+    
+    # Environment variables
+    environment: *default-vggt-environment
     
     # Mount volumes
     volumes:
@@ -24,7 +56,14 @@ services:
         target: /workspace
       - type: bind
         source: ~/.cache/huggingface
-        target: /root/.cache/huggingface  # Cache HuggingFace models
+        target: /root/.cache/huggingface
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
     
     # Keep container running
     stdin_open: true
@@ -33,13 +72,8 @@ services:
     # Increase shared memory size for PyTorch DataLoader
     shm_size: '16gb'
 
-    # Network settings
+    # Network settings (use host mode for easier port access)
     network_mode: host
-    
-    # Expose ports for demos
-    ports:
-      - "7860:7860"  # Gradio demo
-      - "8080:8080"  # Viser demo
     
     working_dir: /workspace
     
