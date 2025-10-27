@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument("--shared_camera", action="store_true", default=False, help="Use shared camera for all images")
     parser.add_argument("--camera_type", type=str, default="PINHOLE", help="Camera type for reconstruction")
     parser.add_argument("--vis_thresh", type=float, default=0.1, help="Visibility threshold for tracks")
-    parser.add_argument("--query_frame_num", type=int, default=25, help="Number of frames to query")
+    parser.add_argument("--query_frame_num", type=int, default=30, help="Number of frames to query")
     parser.add_argument("--max_query_pts", type=int, default=8192, help="Maximum number of query points")
     parser.add_argument(
         "--fine_tracking", action="store_true", default=True, help="Use fine tracking (slower but more accurate)"

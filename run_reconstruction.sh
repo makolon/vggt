@@ -4,7 +4,7 @@
 
 set -e  # Exit on error
 
-SCENE_DIR="${1:-./examples/sofa}"
+SCENE_DIR="${1:-./examples/table}"
 
 echo "=================================="
 echo "3D Reconstruction Pipeline"
@@ -103,6 +103,42 @@ python3 convert_colmap2mesh.py \
     --refine_scales 1
 
 echo ""
+
+# Step 5: Convert mesh to USD and OBJ formats
+echo "Step 5: Converting mesh to USD and OBJ formats..."
+echo ""
+
+# Check which mesh file to convert (prefer textured version)
+MESH_FILE=""
+if [ -f "$SCENE_DIR/mesh/mvs/scene_dense_mesh_refine_texture.ply" ]; then
+    MESH_FILE="$SCENE_DIR/mesh/mvs/scene_dense_mesh_refine_texture.ply"
+    echo "Using textured mesh: $MESH_FILE"
+elif [ -f "$SCENE_DIR/mesh/mvs/scene_dense_mesh_refine.ply" ]; then
+    MESH_FILE="$SCENE_DIR/mesh/mvs/scene_dense_mesh_refine.ply"
+    echo "Using refined mesh: $MESH_FILE"
+elif [ -f "$SCENE_DIR/mesh/mvs/scene_dense.ply" ]; then
+    MESH_FILE="$SCENE_DIR/mesh/mvs/scene_dense.ply"
+    echo "Using dense point cloud: $MESH_FILE"
+else
+    echo "Warning: No mesh file found, skipping USD/OBJ conversion"
+    MESH_FILE=""
+fi
+
+if [ -n "$MESH_FILE" ]; then
+    # Export both USD and OBJ formats
+    python3 convert_mesh2usd.py \
+        --input "$MESH_FILE" \
+        --export_both \
+        --collision_approximation meshSimplification \
+        --static_friction 0.5 \
+        --dynamic_friction 0.5 \
+        --restitution 0.0
+    
+    echo ""
+    echo "Mesh converted to USD and OBJ formats"
+fi
+
+echo ""
 echo "=================================="
 echo "Pipeline completed successfully!"
 echo "=================================="
@@ -111,4 +147,10 @@ echo "Output files:"
 echo "  - Sparse reconstruction: $SCENE_DIR/sparse/"
 echo "  - Point cloud: $SCENE_DIR/sparse/points.ply"
 echo "  - Mesh: $SCENE_DIR/mesh/mvs/"
+if [ -n "$MESH_FILE" ]; then
+    USD_FILE="${MESH_FILE%.ply}.usd"
+    OBJ_FILE="${MESH_FILE%.ply}.obj"
+    echo "  - USD file: $USD_FILE"
+    echo "  - OBJ file: $OBJ_FILE"
+fi
 echo ""

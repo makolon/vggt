@@ -11,6 +11,7 @@ requests
 trimesh
 usd-core
 matplotlib
+pillow_heif
 PyOpenGL
 pyside6
 pydantic==2.10.6

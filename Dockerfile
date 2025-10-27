@@ -153,6 +153,10 @@ RUN git clone https://github.com/colmap/colmap.git -b 3.9 /tmp/colmap && \
 ENV PATH="/usr/local/bin/OpenMVS:${PATH}"
 ENV PATH="/usr/local/bin/colmap:${PATH}"
 
+# Add PATH settings to .bashrc for interactive shells
+RUN echo 'export PATH="/usr/local/bin/OpenMVS:${PATH}"' >> /root/.bashrc && \
+    echo 'export PATH="/usr/local/bin/colmap:${PATH}"' >> /root/.bashrc
+
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 

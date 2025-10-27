@@ -20,8 +20,10 @@ import subprocess
 import os
 import sys
 import json
-from pathlib import Path
 import shutil
+from pathlib import Path
+
+import pycolmap
 
 
 def parse_args():
@@ -98,22 +100,16 @@ def run_command(cmd, cwd=None, description=""):
     print(f"Running: {' '.join(cmd)}")
     print(f"Working directory: {cwd if cwd else os.getcwd()}")
     
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=cwd,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-        print(result.stdout)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing command: {' '.join(cmd)}")
-        print(f"Return code: {e.returncode}")
-        print(f"Output:\n{e.stdout}")
-        return False
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True
+    )
+    print(result.stdout)
+    return True
 
 
 def validate_input_structure(scene_dir):
@@ -155,58 +151,56 @@ def validate_input_structure(scene_dir):
     return True
 
 
+def _camera_model_name(camera) -> str:
+    if hasattr(camera, "model") and hasattr(camera.model, "name"):
+        return camera.model.name
+    if hasattr(camera, "model_name"):
+        return camera.model_name
+    return str(getattr(camera, "model", ""))
+
+
 def convert_cameras_to_pinhole(sparse_dir, output_dir):
     """Convert camera models to PINHOLE format for OpenMVS."""
-    try:
-        import pycolmap
-        
-        print("Converting cameras to PINHOLE model...")
-        reconstruction = pycolmap.Reconstruction(str(sparse_dir))
-        
-        # Convert all cameras to PINHOLE model
-        for cam_id, camera in reconstruction.cameras.items():
-            if camera.model_name != "PINHOLE":
-                print(f"  Converting camera {cam_id} from {camera.model_name} to PINHOLE")
-                
-                # Get current parameters
-                width = camera.width
-                height = camera.height
-                
-                # Extract focal lengths and principal point
-                if camera.model_name in ["SIMPLE_PINHOLE", "SIMPLE_RADIAL"]:
-                    f = camera.params[0]
-                    cx = camera.params[1]
-                    cy = camera.params[2]
-                    fx = fy = f
-                elif camera.model_name in ["PINHOLE", "RADIAL"]:
-                    fx = camera.params[0]
-                    fy = camera.params[1]
-                    cx = camera.params[2]
-                    cy = camera.params[3]
-                else:
-                    # Default: assume square pixels and centered principal point
-                    fx = fy = max(width, height)
-                    cx = width / 2.0
-                    cy = height / 2.0
-                
-                # Create new PINHOLE camera
-                new_camera = pycolmap.Camera(
-                    model="PINHOLE",
-                    width=width,
-                    height=height,
-                    params=[fx, fy, cx, cy]
-                )
-                reconstruction.cameras[cam_id] = new_camera
-        
-        # Save to output directory
-        os.makedirs(output_dir, exist_ok=True)
-        reconstruction.write(str(output_dir))
-        print(f"  Saved PINHOLE cameras to {output_dir}")
-        return True
-        
-    except Exception as e:
-        print(f"Error converting cameras: {e}")
-        return False
+    print("Converting cameras to PINHOLE model...")
+    reconstruction = pycolmap.Reconstruction(str(sparse_dir))
+
+    for cam_id, camera in reconstruction.cameras.items():
+        model_name = _camera_model_name(camera)
+
+        if model_name != "PINHOLE":
+            print(f"  Converting camera {cam_id} from {model_name} to PINHOLE")
+
+            width = int(camera.width)
+            height = int(camera.height)
+            params = list(camera.params)
+
+            if model_name in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "SIMPLE_RADIAL_FISHEYE"):
+                # f, cx, cy
+                f, cx, cy = params[0], params[1], params[2]
+                fx = fy = f
+            elif model_name in ("PINHOLE", "RADIAL", "RADIAL_FISHEYE", "OPENCV", "OPENCV_FISHEYE", "FULL_OPENCV"):
+                fx, fy, cx, cy = params[0], params[1], params[2], params[3]
+            else:
+                print(f"  Warning: Unknown camera model {model_name}, using fallback intrinsics")
+                fx = fy = max(width, height)
+                cx = width / 2.0
+                cy = height / 2.0
+
+            new_camera = pycolmap.Camera(
+                model="PINHOLE",
+                width=width,
+                height=height,
+                params=[float(fx), float(fy), float(cx), float(cy)],
+                camera_id=int(cam_id),
+            )
+            reconstruction.cameras[cam_id] = new_camera
+        else:
+            print(f"  Camera {cam_id} is already PINHOLE model")
+
+    os.makedirs(output_dir, exist_ok=True)
+    reconstruction.write(str(output_dir))
+    print(f"  Saved PINHOLE cameras to {output_dir}")
+    return True
 
 
 def step_undistort_images(scene_dir, dense_dir):
@@ -444,59 +438,52 @@ def main():
     validate_input_structure(args.scene_dir)
     
     # Pipeline execution
-    try:
-        # Step 1: Prepare images (skip undistortion to avoid dimension mismatches)
-        step_undistort_images(args.scene_dir, dense_dir)
-        
-        # Step 2: Convert to MVS format
-        scene_mvs = step_interface_colmap(dense_dir, mvs_dir)
-        
-        # Step 3: Densify point cloud
-        step_densify_point_cloud(mvs_dir, scene_mvs)
-        
-        # Step 4: Reconstruct mesh
-        step_reconstruct_mesh(mvs_dir)
-        
-        # Step 5: Refine mesh
-        refined_mesh = step_refine_mesh(mvs_dir, args.max_face_area, args.refine_scales)
-        
-        # Step 6: Texture mesh (optional)
-        if not args.no_texture:
-            textured_mesh = step_texture_mesh(mvs_dir)
-            final_output = textured_mesh
-        else:
-            final_output = refined_mesh
-            print("\nSkipping texture mapping (--no_texture flag set)")
-        
-        # Create progress file
-        create_progress_file(mvs_dir, args)
-        
-        # Cleanup
-        cleanup_intermediate_files(dense_dir, args.keep_intermediate)
-        
-        # Summary
-        print("\n" + "="*80)
-        print("CONVERSION COMPLETE!")
-        print("="*80)
-        print(f"\nOutput directory: {mesh_dir}")
-        print(f"Final mesh: {final_output}")
-        
-        if not args.no_texture:
-            print("\nTextured mesh files:")
-            print(f"- PLY: {final_output}")
-            texture_files = list(Path(mvs_dir).glob("scene_dense_mesh_refine_texture*.png"))
-            if texture_files:
-                print(f"- Textures: {len(texture_files)} files")
-        else:
-            print(f"\nUntextured mesh: {final_output}")
-        
-        print("\n" + "="*80)
-        
-    except Exception as e:
-        print(f"\nError during processing: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    # Step 1: Prepare images (skip undistortion to avoid dimension mismatches)
+    step_undistort_images(args.scene_dir, dense_dir)
+    
+    # Step 2: Convert to MVS format
+    scene_mvs = step_interface_colmap(dense_dir, mvs_dir)
+    
+    # Step 3: Densify point cloud
+    step_densify_point_cloud(mvs_dir, scene_mvs)
+    
+    # Step 4: Reconstruct mesh
+    step_reconstruct_mesh(mvs_dir)
+    
+    # Step 5: Refine mesh
+    refined_mesh = step_refine_mesh(mvs_dir, args.max_face_area, args.refine_scales)
+    
+    # Step 6: Texture mesh (optional)
+    if not args.no_texture:
+        textured_mesh = step_texture_mesh(mvs_dir)
+        final_output = textured_mesh
+    else:
+        final_output = refined_mesh
+        print("\nSkipping texture mapping (--no_texture flag set)")
+    
+    # Create progress file
+    create_progress_file(mvs_dir, args)
+    
+    # Cleanup
+    cleanup_intermediate_files(dense_dir, args.keep_intermediate)
+    
+    # Summary
+    print("\n" + "="*80)
+    print("CONVERSION COMPLETE!")
+    print("="*80)
+    print(f"\nOutput directory: {mesh_dir}")
+    print(f"Final mesh: {final_output}")
+    
+    if not args.no_texture:
+        print("\nTextured mesh files:")
+        print(f"- PLY: {final_output}")
+        texture_files = list(Path(mvs_dir).glob("scene_dense_mesh_refine_texture*.png"))
+        if texture_files:
+            print(f"- Textures: {len(texture_files)} files")
+    else:
+        print(f"\nUntextured mesh: {final_output}")
+    
+    print("\n" + "="*80)
 
 
 if __name__ == "__main__":

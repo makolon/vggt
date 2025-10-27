@@ -78,15 +78,11 @@ def load_colmap_reconstruction(sparse_dir):
     print(f"Loading COLMAP reconstruction from {sparse_dir}...")
     
     # Try to load binary format first
-    try:
-        reconstruction = pycolmap.Reconstruction(sparse_dir)
-        print(f"Loaded {len(reconstruction.points3D)} 3D points")
-        print(f"Loaded {len(reconstruction.images)} images")
-        print(f"Loaded {len(reconstruction.cameras)} cameras")
-        return reconstruction
-    except Exception as e:
-        print(f"Error loading COLMAP reconstruction: {e}")
-        sys.exit(1)
+    reconstruction = pycolmap.Reconstruction(sparse_dir)
+    print(f"Loaded {len(reconstruction.points3D)} 3D points")
+    print(f"Loaded {len(reconstruction.images)} images")
+    print(f"Loaded {len(reconstruction.cameras)} cameras")
+    return reconstruction
 
 
 def load_point_cloud_from_ply(ply_path):
