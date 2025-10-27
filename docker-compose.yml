@@ -72,7 +72,7 @@ services:
     # Increase shared memory size for PyTorch DataLoader
     shm_size: '16gb'
 
-    # Network settings (use host mode for easier port access)
+    # Network settings
     network_mode: host
     
     working_dir: /workspace
